@@ -31,7 +31,7 @@ openai.api_key = OPENAI_API_KEY
 
 # ─── STREAMLIT PAGE CONFIG ───────────────────────────────────
 st.set_page_config(
-    page_title="Data Concierge POC",
+    page_title="Data Sherpa POC",
     page_icon="🔭",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -45,14 +45,14 @@ try:
     )
     
     # Check if schema exists
-    if not client.schema.exists("DC_POC"):
+    if not client.schema.exists("DS_POC"):
         st.error("⚠️ Weaviate schema not initialized. Please run `python src/weaviate_setup.py` first.")
         st.stop()
     
     embedder = get_embedding_function()
     store = Weaviate(
         client=client,
-        index_name="DC_POC",
+        index_name="DS_POC",
         text_key="content",
         embedding=embedder,
         by_text=False,      
@@ -142,7 +142,7 @@ Please answer using ONLY the context above. Cite each fact with the source PDF f
 
 # ─── SIDEBAR ──────────────────────────────────────────────────
 with st.sidebar:
-    st.title("Data Concierge POC")
+    st.title("Data Sherpa POC")
     st.markdown("""
         This ChatBot provides information based on documents from the 
         [Dark Energy Survey](https://www.darkenergysurvey.org/) (DES) project.
@@ -173,7 +173,7 @@ with st.sidebar:
 if "messages" not in st.session_state:
     st.session_state.messages = [{
         "role": "assistant",
-        "content": """👋 Welcome to the Data Concierge!  
+        "content": """👋 Welcome to the Data Sherpa!  
 Ask me anything about the Dark Energy Survey project.
 
 **Example questions:**

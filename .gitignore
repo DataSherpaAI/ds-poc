@@ -23,7 +23,7 @@ venv/
 env/
 
 # Data (particular to this project)
-src/data/documents/*.pdf
+# src/data/documents/*.pdf
 src/data/json/*.json
 
 # Streamlit

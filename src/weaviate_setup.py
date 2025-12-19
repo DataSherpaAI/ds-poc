@@ -22,7 +22,7 @@ from embedding import get_embedding_function
 # ─── CONFIGURATION ────────────────────────────────────────────
 WEAVIATE_URL     = os.getenv("WEAVIATE_URL")
 WEAVIATE_API_KEY = os.getenv("WEAVIATE_API_KEY")
-CLASS_NAME       = "DC_POC"  # Match your chatbot's index_name
+CLASS_NAME       = "DS_POC"  # Match your chatbot's index_name
 DATA_DIR         = Path(__file__).parent / "data" / "documents"
 
 # Validate environment variables
