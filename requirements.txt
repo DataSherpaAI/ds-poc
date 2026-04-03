@@ -19,3 +19,5 @@ pypdf==5.1.0
 # Utilities
 requests==2.32.3
 tenacity==8.5.0
+streamlit-oauth==0.1.14
+pyjwt==2.12.1

@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 import os
+import jwt
+import httpx
 import openai
 import weaviate
 import streamlit as st
 
+from authlib.integrations.httpx_client import OAuth2Client
 from pathlib import Path
 from dotenv import load_dotenv
 from weaviate import AuthApiKey, Client
-
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Weaviate
-
 from embedding import get_embedding_function
 
 # ─── LOAD ENV ─────────────────────────────────────────────────
@@ -21,6 +20,17 @@ load_dotenv(dotenv_path=env_path)
 OPENAI_API_KEY   = os.getenv("OPENAI_API_KEY")
 WEAVIATE_URL     = os.getenv("WEAVIATE_URL")
 WEAVIATE_API_KEY = os.getenv("WEAVIATE_API_KEY")
+
+# ─── CILOGON CONFIG ───────────────────────────────────────────
+CILOGON_CLIENT_ID     = os.getenv("CILOGON_CLIENT_ID")
+CILOGON_CLIENT_SECRET = os.getenv("CILOGON_CLIENT_SECRET")
+CILOGON_REDIRECT_URI  = os.getenv("CILOGON_REDIRECT_URI")
+
+AUTHORIZE_URL     = "https://cilogon.org/authorize"
+TOKEN_URL         = "https://cilogon.org/oauth2/token"
+REFRESH_TOKEN_URL = "https://cilogon.org/oauth2/token"
+REVOKE_TOKEN_URL  = "https://cilogon.org/oauth2/revoke"
+SCOPE             = "openid email profile org.cilogon.userinfo"
 
 # Validate environment variables
 if not all([OPENAI_API_KEY, WEAVIATE_URL, WEAVIATE_API_KEY]):
@@ -36,6 +46,70 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# ─── CILOGON AUTH GATE ────────────────────────────────────────
+def get_cilogon_client():
+    return OAuth2Client(
+        client_id=CILOGON_CLIENT_ID,
+        client_secret=CILOGON_CLIENT_SECRET,
+        redirect_uri=CILOGON_REDIRECT_URI,
+        scope=SCOPE
+    )
+
+# Handle the callback — CILogon returns ?code=xxx in the URL
+query_params = st.query_params
+
+if "token" not in st.session_state:
+    if "code" in query_params:
+        if "oauth_code_used" not in st.session_state:
+            st.session_state.oauth_code_used = True
+            try:
+                client_oauth = get_cilogon_client()
+                token = client_oauth.fetch_token(
+                    TOKEN_URL,
+                    code=query_params["code"],
+                    grant_type="authorization_code",
+                    token_endpoint_auth_method="client_secret_post"
+                )
+                st.session_state.token = token
+                st.query_params.clear()
+                st.rerun()
+            except Exception as e:
+                del st.session_state.oauth_code_used
+                st.error(f"Authentication failed: {e}")
+                st.stop()
+        else:
+            st.write("DEBUG: code already used, clearing params...")
+            st.query_params.clear()
+            st.rerun()
+    else:
+        # No token, no code — show login page
+        client_oauth = get_cilogon_client()
+        uri, state = client_oauth.create_authorization_url(AUTHORIZE_URL)
+        st.session_state.oauth_state = state
+        st.title("🔭 Data Sherpa")
+        st.markdown("Please log in to access the Data Sherpa.")
+        st.markdown(f"""
+            <a href="{uri}" target="_self">
+                <button style="
+                    background-color:#005f9e;
+                    color:white;
+                    padding:12px 24px;
+                    border:none;
+                    border-radius:6px;
+                    font-size:16px;
+                    cursor:pointer;">
+                    🔐 Login with CILogon
+                </button>
+            </a>
+        """, unsafe_allow_html=True)
+        st.stop()
+
+# Decode user info from ID token
+id_token = st.session_state.token.get("id_token")
+user_info = jwt.decode(id_token, options={"verify_signature": False})
+user_name  = user_info.get("name", "User")
+user_email = user_info.get("email", "")
 
 # ─── WEAVIATE + VECTORSTORE SETUP (once on import) ───────────
 try:
@@ -158,13 +232,22 @@ with st.sidebar:
         ⚠️ **Note:** This is a prototype and may contain inaccuracies. Always verify 
         critical information with official DES documentation.
     """)
-    
+
     st.divider()
-    
+
+    # ─── USER INFO & LOGOUT ───────────────────────────────────
+    st.markdown(f"👤 **{user_name}**")
+    st.markdown(f"`{user_email}`")
+    if st.button("Logout"):
+        del st.session_state.token
+        st.rerun()
+
+    st.divider()
+
     # Debug options
     st.subheader("Debug Options")
     show_relevance_scores = st.checkbox(
-        "Show relevance scores", 
+        "Show relevance scores",
         value=False,
         help="Display similarity scores for retrieved documents (useful for debugging)"
     )

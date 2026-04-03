@@ -31,8 +31,8 @@ Powered by **OpenAI GPT-4.1**, **Weaviate** vector database, and a clean **Strea
 1. **Clone the repository**
 
 ```bash
-git clone git@github.com:lacdacon/dc-poc.git
-cd dc-poc
+git clone git@github.com:DataSherpaAI/ds-poc.git
+cd ds-poc
 ```
 
 2. **Create and activate a virtual environment**
@@ -79,7 +79,7 @@ Use `--reset` to clear and rebuild the index.
 ## 💬 Start the Streamlit App
 
 ```bash
-streamlit run src/app-dc-poc.py --server.address 0.0.0.0 --server.port 8501
+streamlit run src/app-ds-poc.py --server.address 0.0.0.0 --server.port 8501
 ```
 
 Then open your browser at `http://localhost:8501` (or your VM IP).
