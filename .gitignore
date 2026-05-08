@@ -25,6 +25,8 @@ env/
 # Data (particular to this project)
 # src/data/documents/*.pdf
 src/data/json/*.json
+src/data/documents_1367/
+src/.ingest_checkpoint*
 
 # Streamlit
 .streamlit/

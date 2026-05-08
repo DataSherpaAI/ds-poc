@@ -1,0 +1,36 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sherpa-streamlit
+    restart: unless-stopped
+    network_mode: "host"
+    environment:
+      # Weaviate is bound to localhost on the HOST.
+      # Use host-gateway mapping so the container can reach it.
+      WEAVIATE_URL: "${WEAVIATE_URL}"
+      WEAVIATE_API_KEY: "${WEAVIATE_API_KEY}"
+      WEAVIATE_CLASS_NAME: "${WEAVIATE_CLASS_NAME}"
+      # OpenAI
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      # CILogon
+      CILOGON_CLIENT_ID: "${CILOGON_CLIENT_ID}"
+      CILOGON_CLIENT_SECRET: "${CILOGON_CLIENT_SECRET}"
+      CILOGON_REDIRECT_URI: "${CILOGON_REDIRECT_URI}"
+
+  nginx:
+    image: nginx:alpine
+    container_name: sherpa-nginx
+    user: "0:0"
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/sherpa.conf:/etc/nginx/conf.d/default.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

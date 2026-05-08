@@ -5,6 +5,8 @@ import httpx
 import openai
 import weaviate
 import streamlit as st
+import base64
+from pathlib import Path
 
 from authlib.integrations.httpx_client import OAuth2Client
 from pathlib import Path
@@ -15,11 +17,13 @@ from embedding import get_embedding_function
 
 # ─── LOAD ENV ─────────────────────────────────────────────────
 env_path = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(dotenv_path=env_path)
+if env_path.exists():
+    load_dotenv(dotenv_path=env_path)
 
 OPENAI_API_KEY   = os.getenv("OPENAI_API_KEY")
 WEAVIATE_URL     = os.getenv("WEAVIATE_URL")
 WEAVIATE_API_KEY = os.getenv("WEAVIATE_API_KEY")
+CLASS_NAME = os.getenv("WEAVIATE_CLASS_NAME", "DS_POC")
 
 # ─── CILOGON CONFIG ───────────────────────────────────────────
 CILOGON_CLIENT_ID     = os.getenv("CILOGON_CLIENT_ID")
@@ -41,7 +45,7 @@ openai.api_key = OPENAI_API_KEY
 
 # ─── STREAMLIT PAGE CONFIG ───────────────────────────────────
 st.set_page_config(
-    page_title="Data Sherpa POC",
+    page_title="Dark Energy Survey - Sherpa",
     page_icon="🔭",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -119,14 +123,14 @@ try:
     )
     
     # Check if schema exists
-    if not client.schema.exists("DS_POC"):
-        st.error("⚠️ Weaviate schema not initialized. Please run `python src/weaviate_setup.py` first.")
+    if not client.schema.exists(CLASS_NAME):
+        st.error("⚠️ Weaviate schema `{CLASS_NAME}` not initialized. Please run `python src/weaviate_setup.py` first.")
         st.stop()
     
     embedder = get_embedding_function()
     store = Weaviate(
         client=client,
-        index_name="DS_POC",
+        index_name=CLASS_NAME,
         text_key="content",
         embedding=embedder,
         by_text=False,      
@@ -215,21 +219,36 @@ Please answer using ONLY the context above. Cite each fact with the source PDF f
         return f"⚠️ An error occurred: {str(e)}\nPlease try again or rephrase your question."
 
 # ─── SIDEBAR ──────────────────────────────────────────────────
+def img_data_uri(path: str) -> str:
+    data = Path(path).read_bytes()
+    b64 = base64.b64encode(data).decode("utf-8")
+    # Change mime if not PNG
+    return f"data:image/png;base64,{b64}"
+
 with st.sidebar:
-    st.title("Data Sherpa POC")
+    col_left, col_mid, col_right = st.columns([1, 3, 1])
+    with col_mid:
+        uri = img_data_uri("src/des_logo.png")
+        st.markdown(
+            f"""
+            <a href="https://www.darkenergysurvey.org" target="_blank" rel="noopener noreferrer"
+               style="display:flex; justify-content:center;">
+              <img src="{uri}" style="width:256px; height:auto; display:block; cursor:pointer;" alt="DES Logo"/>
+            </a>
+            """,
+            unsafe_allow_html=True,
+        )
+    
+    st.title("DES Sherpa")
     st.markdown("""
-        This ChatBot provides information based on documents from the 
+        This Sherpa provides information based on all the scientific papers produced by the 
         [Dark Energy Survey](https://www.darkenergysurvey.org/) (DES) project.
-        
-        **About DES:**
-        The DES is a USA-led international project mapping large portions of the sky 
-        to study dark energy and the accelerating expansion of the universe.
         
         **How to use:**
         Ask detailed questions about DES technical documentation and receive precise, 
         cited answers—powered by OpenAI GPT-4 and Weaviate.
         
-        ⚠️ **Note:** This is a prototype and may contain inaccuracies. Always verify 
+        ⚠️ **Note:** AI generated answers may contain inaccuracies. Always verify 
         critical information with official DES documentation.
     """)
 
@@ -256,7 +275,7 @@ with st.sidebar:
 if "messages" not in st.session_state:
     st.session_state.messages = [{
         "role": "assistant",
-        "content": """👋 Welcome to the Data Sherpa!  
+        "content": """👋 Welcome to the DES Sherpa!  
 Ask me anything about the Dark Energy Survey project.
 
 **Example questions:**

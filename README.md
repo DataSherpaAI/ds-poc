@@ -21,7 +21,7 @@ Powered by **OpenAI GPT-4.1**, **Weaviate** vector database, and a clean **Strea
 
 - Python 3.10+
 - A valid OpenAI API key
-- Weaviate running locally or remotely
+- [Weaviate **running locally**](localWEAVIATE.md) or remotely
 - Git
 
 ---
