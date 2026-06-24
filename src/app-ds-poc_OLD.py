@@ -24,7 +24,6 @@ OPENAI_API_KEY   = os.getenv("OPENAI_API_KEY")
 WEAVIATE_URL     = os.getenv("WEAVIATE_URL")
 WEAVIATE_API_KEY = os.getenv("WEAVIATE_API_KEY")
 CLASS_NAME = os.getenv("WEAVIATE_CLASS_NAME", "DS_POC")
-SLACK_CLASS_NAME = os.getenv("WEAVIATE_SLACK_CLASS_NAME", "DS_SLACK_DES")
 
 # ─── CILOGON CONFIG ───────────────────────────────────────────
 CILOGON_CLIENT_ID     = os.getenv("CILOGON_CLIENT_ID")
@@ -142,40 +141,16 @@ except Exception as e:
     st.info("Make sure you've run `python src/weaviate_setup.py` first.")
     st.stop()
 
-# ─── SLACK STORE (optional — app still works if not yet ingested) ─────
-slack_store = None
-try:
-    if client.schema.exists(SLACK_CLASS_NAME):
-        slack_store = Weaviate(
-            client=client,
-            index_name=SLACK_CLASS_NAME,
-            text_key="content",
-            embedding=embedder,
-            by_text=False,
-            attributes=["channel", "source", "ts_start", "ts_end", "unit_type", "reaction_count", "has_thanks_reaction"],
-        )
-    else:
-        print(f"ℹ️  Slack collection `{SLACK_CLASS_NAME}` not found — Slack search disabled until ingested.")
-except Exception as e:
-    print(f"⚠️ Slack store unavailable, continuing without it: {e}")
-    slack_store = None
-
 # ─── EXPERT‑CONSULTANT PROMPT TEMPLATE ───────────────────────
 SYSTEM_PROMPT = """You are an expert Data Concierge assistant for large astronomy collaborations, specifically the Dark Energy Survey (DES).
 
 ## Your Core Responsibility:
 Help astronomers and researchers find relevant information in DES documentation, explain technical concepts, and clarify procedures.
 
-## Your Knowledge Sources:
-You may receive two kinds of context:
-- "Documentation Sources" — official PDFs, papers, and technical materials. Treat these as authoritative.
-- "Slack Discussion Sources" — excerpts from public DES Slack channels. These are informal, conversational, and may be outdated, personal opinions, or superseded by later decisions. Treat them as USEFUL BUT LOWER-AUTHORITY than documentation. If a Slack excerpt conflicts with a documentation source, prefer the documentation and say so explicitly.
-
 ## Your Approach:
 - Answer ONLY using the provided context - do not use external knowledge
 - Be concise but thorough - astronomers value precision
-- Cite specific sources for each claim: PDF name and page for documentation; channel name and date for Slack excerpts
-- When relying on a Slack excerpt, briefly flag it as coming from an informal discussion (e.g., "per a Slack discussion in #channel...")
+- Cite specific sources (PDF name and page) for each claim
 - Use proper astronomical terminology and units
 - If the context doesn't contain the answer, clearly state: "I don't find that information in the provided documents"
 - Ask clarifying questions when requests are ambiguous
@@ -190,35 +165,17 @@ Professional yet approachable - a knowledgeable colleague helping researchers wo
 """
 
 # ─── RAG FUNCTION ─────────────────────────────────────────────
-def generate_response(question: str, k: int = 5, k_slack: int = 3, show_scores: bool = False) -> str:
+def generate_response(question: str, k: int = 5, show_scores: bool = False) -> str:
     try:
-        # Retrieve top‑k chunks from documentation
+        # Retrieve top‑k chunks
         docs_and_scores = store.similarity_search_with_score(question, k=k)
-
-        # Retrieve top-k_slack chunks from Slack, if that collection exists
-        slack_docs_and_scores = []
-        if slack_store is not None:
-            try:
-                slack_docs_and_scores = slack_store.similarity_search_with_score(question, k=k_slack)
-            except Exception as e:
-                print(f"⚠️ Slack search failed, continuing with documentation only: {e}")
-
-        if not docs_and_scores and not slack_docs_and_scores:
+        
+        if not docs_and_scores:
             return "I couldn't find any relevant information in the documents. Please try rephrasing your question."
-
-        # Build labeled context blocks so the model knows which source is which
-        context_parts = []
-        if docs_and_scores:
-            doc_block = "\n\n---\n\n".join(doc.page_content for doc, _ in docs_and_scores)
-            context_parts.append(f"### Documentation Sources\n{doc_block}")
-        if slack_docs_and_scores:
-            slack_block = "\n\n---\n\n".join(
-                f"[Channel: #{doc.metadata.get('channel', 'unknown')} | {doc.metadata.get('ts_start', '')} to {doc.metadata.get('ts_end', '')}]\n{doc.page_content}"
-                for doc, _ in slack_docs_and_scores
-            )
-            context_parts.append(f"### Slack Discussion Sources (informal, lower authority)\n{slack_block}")
-        context = "\n\n".join(context_parts)
-
+        
+        # Build the "context" block
+        context = "\n\n---\n\n".join(doc.page_content for doc, _ in docs_and_scores)
+        
         # Compose OpenAI Chat messages
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -229,7 +186,7 @@ def generate_response(question: str, k: int = 5, k_slack: int = 3, show_scores: 
 
 Question: {question}
 
-Please answer using ONLY the context above. Cite documentation facts with the source PDF filename and page number. Cite Slack facts with the channel name and date. If the answer is not in the context, say so clearly."""}
+Please answer using ONLY the context above. Cite each fact with the source PDF filename and page number if available. If the answer is not in the context, say so clearly."""}
         ]
         
         # Call OpenAI
@@ -242,20 +199,9 @@ Please answer using ONLY the context above. Cite documentation facts with the so
         answer = resp.choices[0].message.content.strip()
         
         # List unique sources with better formatting
-        doc_sources = sorted({doc.metadata.get("source", "unknown") for doc, _ in docs_and_scores})
-        slack_sources = sorted({
-            f"#{doc.metadata.get('channel', 'unknown')} ({doc.metadata.get('ts_start', '')})"
-            for doc, _ in slack_docs_and_scores
-        })
-
-        sources_md = ""
-        if doc_sources:
-            sources_md += "\n".join(f"- `{s}`" for s in doc_sources)
-        if slack_sources:
-            if sources_md:
-                sources_md += "\n"
-            sources_md += "\n".join(f"- 💬 Slack: `{s}`" for s in slack_sources)
-
+        sources = sorted({doc.metadata.get("source", "unknown") for doc, _ in docs_and_scores})
+        sources_md = "\n".join(f"- `{s}`" for s in sources)
+        
         # Build response with sources
         response = f"{answer}\n\n**Sources:**\n{sources_md}"
         
@@ -265,11 +211,6 @@ Please answer using ONLY the context above. Cite documentation facts with the so
                 f"- `{doc.metadata.get('source', 'unknown')}`: {score:.3f}" 
                 for doc, score in docs_and_scores
             )
-            if slack_docs_and_scores:
-                scores_info += "\n" + "\n".join(
-                    f"- 💬 #{doc.metadata.get('channel', 'unknown')}: {score:.3f}"
-                    for doc, score in slack_docs_and_scores
-                )
             response += f"\n\n**Relevance Scores (Debug):**\n{scores_info}"
         
         return response
@@ -330,14 +271,6 @@ with st.sidebar:
         help="Display similarity scores for retrieved documents (useful for debugging)"
     )
 
-    st.subheader("Knowledge Sources")
-    if slack_store is not None:
-        st.success("💬 Slack discussions: connected")
-        include_slack = st.checkbox("Include Slack discussions", value=True)
-    else:
-        st.info("💬 Slack discussions: not ingested yet")
-        include_slack = False
-
 # ─── STREAMLIT CHAT UI ────────────────────────────────────────
 if "messages" not in st.session_state:
     st.session_state.messages = [{
@@ -368,12 +301,7 @@ if user_q := st.chat_input("Type your question here…"):
     # Generate & display assistant response
     with st.chat_message("assistant"):
         with st.spinner("Thinking…"):
-            reply = generate_response(
-                user_q,
-                k=5,
-                k_slack=3 if include_slack else 0,
-                show_scores=show_relevance_scores,
-            )
+            reply = generate_response(user_q, k=5, show_scores=show_relevance_scores)
             st.markdown(reply)
 
     # Save assistant message
