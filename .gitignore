@@ -26,6 +26,7 @@ env/
 # src/data/documents/*.pdf
 src/data/json/*.json
 src/data/documents_1367/
+src/data/slack_export/
 src/.ingest_checkpoint*
 
 # Streamlit
